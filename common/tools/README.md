@@ -1,3 +1,3 @@
 # Common tools
 
-- directory for keeping tools for all - e. g. Kudlajda Viewer
+- directory for keeping shared tools
