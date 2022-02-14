@@ -39,13 +39,25 @@ imageCN=imadjust(imageReference);
 % %imageCNS=single(imageCN);
 % imageCNS=single(imageCNFilt);
 % %%%
-if isempty(maskStructIntOld)
-    maskStructure=[];
-    imshow(imageCN);
+if isempty(imageReferenceNEW)
+    if isempty(maskStructIntOld)
+        maskStructure=[];
+    else
+        maskStructure=maskStructIntOld;
+    end
+%     imshow(imageCN);
     set (gcf, 'Units', 'normalized', 'Position', [0,0,1,1]);
     w=0;
     fig = gcf;
-    for index=1:9999
+    for index=1:size(maskStructure,2)
+        roundVert=maskStructure(1,index).ringPixListSub;
+        for blueIndex=1:size(roundVert,1)
+            checkOutImage(roundVert(blueIndex,2),roundVert(blueIndex,1),:)=[255 0 0];   
+        end
+    end
+    imshow(checkOutImage)
+    index = size(maskStructure,2)+1;
+    while index<9999
         while w==0
             %disp('cekam')
             keydown = waitforbuttonpress;
@@ -98,6 +110,7 @@ if isempty(maskStructIntOld)
             set (gcf, 'Units', 'normalized', 'Position', [0,0,1,1]);
             fig = gcf;
         end
+        index = index+1;
     end
     imwrite(checkOutImage, 'checkOutImage.tif', 'tiff');
     reidentificationRecord=zeros(1,size(maskStructure,2));
@@ -136,15 +149,15 @@ else
     end
     
     figHandle = figure;
-	axNew = subplot(2,3,[1 2 4 5], 'Parent', figHandle);
+    axNew = subplot(2,3,[1 2 4 5], 'Parent', figHandle);
     imshow(imageCN, 'Parent', axNew)
     hold(axNew, 'on')
-	title('New FOV', 'Parent', axNew)
+    title('New FOV', 'Parent', axNew)
 
-	axRefC = subplot(2,3,3, 'Parent', figHandle);
+    axRefC = subplot(2,3,3, 'Parent', figHandle);
     imshow(imageCNRefC, 'Parent', axRefC)
     hold(axRefC, 'on')
-	title('Reference FOV', 'Parent', axRefC)
+    title('Reference FOV', 'Parent', axRefC)
 
     axRef = subplot(2,3,6, 'Parent', figHandle);
     imshow(imageCNRef, 'Parent', axRef)
@@ -186,7 +199,7 @@ else
         xlim (axNew, [XlimLeft XlimRight]);
         ylim(axNew, [YlimTop YlimDown]);
 
-		refNeuronTMPPoints=maskStructIntOld(1,Nindex).ringPixListSub;
+	    refNeuronTMPPoints=maskStructIntOld(1,Nindex).ringPixListSub;
         refNeuronTMP_Y=round(maskStructIntOld(1,Nindex).CenterCoor(2));
         refNeuronTMP_X=round(maskStructIntOld(1,Nindex).CenterCoor(1));
         if (refNeuronTMP_X-2*neuronR)<1
@@ -212,11 +225,11 @@ else
         else
             YlimDown=refNeuronTMP_Y+2*neuronR;   
         end
-		hRef= impoly(axRef, refNeuronTMPPoints);
+	    hRef= impoly(axRef, refNeuronTMPPoints);
         text(round(maskStructIntOld(1,Nindex).CenterCoor(1)),round(maskStructIntOld(1,Nindex).CenterCoor(2)),num2str(Nindex),'Color','cyan','FontWeight','bold', 'Parent', axRef)
         xlim (axRef, [XlimLeft XlimRight]);
         ylim(axRef, [YlimTop YlimDown]);
-		
+	    
         hRefC= impoly(axRefC, refNeuronTMPPoints);
         text(round(maskStructIntOld(1,Nindex).CenterCoor(1)),round(maskStructIntOld(1,Nindex).CenterCoor(2)),num2str(Nindex),'Color','cyan','FontWeight','bold', 'Parent', axRefC)
         xlim (axRefC, [XlimLeft XlimRight]);
@@ -234,6 +247,9 @@ else
         if pomocna==28
             Nindex = max(1, Nindex - 1);
             disp('go back')
+            delete(h);
+            delete(hRef);
+            delete(hRefC);
             continue
         end
         if isempty(reidentC)
@@ -243,6 +259,7 @@ else
         end
         
         vertices =getPosition(h);
+        
         roundVert=round(vertices);
         for blueIndex=1:size(roundVert,1)
             checkOutImage(roundVert(blueIndex,2),roundVert(blueIndex,1),:)=[255 0 0];   
@@ -263,19 +280,22 @@ else
             maskStructure(1,Nindex).CenterCoor=RP.Centroid;
         end
         
-        
+        delete(h);
+        delete(hRef);
+        delete(hRefC);
+                    
         if mod(Nindex,13)==0      
             close
             figHandle = figure;
-	        axNew = subplot(2,3,[1 2 4 5], 'Parent', figHandle);
+            axNew = subplot(2,3,[1 2 4 5], 'Parent', figHandle);
             imshow(imageCN, 'Parent', axNew)
             hold(axNew, 'on')
-	        title('New FOV', 'Parent', axNew)
+            title('New FOV', 'Parent', axNew)
         
-	        axRefC = subplot(2,3,3, 'Parent', figHandle);
+            axRefC = subplot(2,3,3, 'Parent', figHandle);
             imshow(imageCNRefC, 'Parent', axRefC)
             hold(axRefC, 'on')
-	        title('Reference FOV', 'Parent', axRefC)
+            title('Reference FOV', 'Parent', axRefC)
         
             axRef = subplot(2,3,6, 'Parent', figHandle);
             imshow(imageCNRef, 'Parent', axRef)
@@ -286,8 +306,8 @@ else
         Nindex = Nindex + 1;
     end
     imwrite(checkOutImage, 'checkOutImage.tif', 'tiff');
-
 end
+
 close;
 FOVandSessionName(end+1:end+4)='.mat';
 save(FOVandSessionName);

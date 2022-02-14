@@ -1,4 +1,6 @@
-function numFiles = sortSmrX(inputFiles, outputDirectory, fs, segmentLength, deleteSmrX)
+function numFiles = sortSmrX(inputFiles, outputDirectory, fs, segmentLength, deleteSmrX, syncTimesLog)
+targetSubject = 'Moni ET 430';
+
 % load, resample and sort smrX files from input files to output directory by mice ID    
 % by Jana Nguyen 2021
 %
@@ -50,6 +52,8 @@ function numFiles = sortSmrX(inputFiles, outputDirectory, fs, segmentLength, del
         deleteSmrX = false;
     end
 
+    logVStarts = nargin>=6 && ~isempty(syncTimesLog);
+
     fr = 20;
     numFiles = 0;
     subjectIDs = readtable('\\neurodata\Common stuff\Monitoring EEG\subject__monitoringID.xlsx');
@@ -62,6 +66,12 @@ function numFiles = sortSmrX(inputFiles, outputDirectory, fs, segmentLength, del
     notconvertedfd = fopen([outputDirectory, '\notconvertedList_', num2str(fs), 'Hz.txt'], 'a');
     videoTicks = zeros(4,1);
     videoStarts = zeros(4,1);
+    videoClock = false(4,1);
+    isVideo = false(4,1);
+
+    if logVStarts
+        vStartsFileID = fopen(syncTimesLog, 'a');
+    end
 
     for f = 1:length(directory)
         fname = sprintf('%s\\%s', directory(f).folder, directory(f).name);
@@ -117,7 +127,9 @@ function numFiles = sortSmrX(inputFiles, outputDirectory, fs, segmentLength, del
             LX = allChanTitles{~cellfun(@isempty,re0)};
             monitoringID = str2num(LX(5:end));
             subject = subjectIDs.PopisekProVas{subjectIDs.monitoringID == monitoringID};
-            
+            if ~strcmp(targetSubject, subject)
+                continue
+            end
             % check monitoringID with stationIDs
             thisStationID = stationIDs{stationIDs.date + stationIDs.time < d + 1/240, si};
             thisStationID = thisStationID(end); % station ID is the last ID preceding the file start time + 10mins
@@ -179,7 +191,10 @@ function numFiles = sortSmrX(inputFiles, outputDirectory, fs, segmentLength, del
                 vTicks = find(diff(data.T.Signal{vChanInd})>2 & [0; diff(data.T.Signal{vChanInd},2)>0])./data.T.SamplingFreq(vChanInd);
                 vTicks = vTicks/60/60/24 + dateN;
                 vStart = vTicks(diff([dateN;vTicks])>(2/fr/60/60/24));
+                ticksCorrect = ~isempty(diff(vTicks)) && median(diff(vTicks) >= 1/2/fr/60/60/24);
+
                 if ~isempty(vStart)
+                    fprintf(vStartsFileID, '%s %s\\%s - %c\n', datetime(vStart(end), 'ConvertFrom', 'datenum'), directory(f).folder, directory(f).name, stations(si));
 %                     videoTicks(si) = 0;
                     if length(vStart) > 1
                         fprintf(2, 'Warning: more than 1 video start in file: %s\\%s \n', directory(f).folder, directory(f).name);
@@ -188,12 +203,14 @@ function numFiles = sortSmrX(inputFiles, outputDirectory, fs, segmentLength, del
                     else
                         fprintf('Video Clock beginning found in file: %s\\%s', directory(f).folder, directory(f).name);
 %                         videoStarts(si) = vStart;
-                        datetime(vStart, 'ConvertFrom', 'datenum')
+                        datetime(vStart, 'ConvertFrom', 'datenum');
                     end
+                    videoClock(si) = true;
                 else 
                     if videoTicks(si)==0
                         fprintf(2, 'video clock beginning not found for this file: %s\\%s\n', directory(f).folder, directory(f).name);
-                        continue
+                        videoClock(si) = false;
+%                         continue
                     end
                 end
                                 
@@ -212,42 +229,48 @@ function numFiles = sortSmrX(inputFiles, outputDirectory, fs, segmentLength, del
                     frameEnd = 0;
                     frameStartB = 0;
                     frameEndB = 0;
-                    isVideo = false;
-                    if sum(vTicks>=dateN & vTicks<=(size(s,2)/fs/60/60/24)+dateN)>0 %abs(videoStarts(si)+videoTicks(si)/fr/60/60/24 - dateN) < 1/144
+                    isVideo(si) = sum(vTicks>=dateN & vTicks<=(size(s,2)/fs/60/60/24)+dateN)>0;
+                    
+                    if isVideo(si) && videoClock(si) && abs(videoStarts(si)+videoTicks(si)/fr/60/60/24 - dateN) < 1/24/60
                         frameStart = videoTicks(si);
-                        length(vTicks)
-                        sum(vTicks>=dateN)
-                        sum(vTicks<=(size(s,2)/fs/60/60/24+dateN))
-                        vStart
-                        if vStart>dateN & vStart<((size(s,2)/fs/60/60/24)+dateN)
-                            frameEnd = videoTicks(si) + sum(vTicks>=dateN & vTicks<=vStart);
-                            fprintf('vStart in this segment %s, %s', datetime(vStart, 'ConvertFrom', 'datenum'), dateStr)
+%                         length(vTicks)
+%                         sum(vTicks>=dateN)
+%                         sum(vTicks<=(size(s,2)/fs/60/60/24+dateN))
+%                         if vStart>dateN & vStart<((size(s,2)/fs/60/60/24)+dateN)
+                        if ticksCorrect
+                            frameEnd = videoTicks(si) + sum(vTicks>=dateN & vTicks<=dateN+(size(s,2)/fs/60/60/24));
                         else
-                            frameEnd = videoTicks(si) + sum(vTicks>=dateN & vTicks<=(size(s,2)/fs/60/60/24)+dateN);
+                            frameEnd = videoTicks(si) + size(s,2)/fs/60/60/24 - max(vStart + dateN, 0);
                         end
+                    
                         videoTicks(si) = frameEnd;
                         fprintf('frame numbers found successfully: start=%d end=%d\n', frameStart, frameEnd)
-                        isVideo = true;
+                        videoClock(si) = true;
+                    else 
+                        if isVideo(si) && videoClock(si) && (vStart>dateN) && (vStart<((size(s,2)/fs/60/60/24)+dateN))
+                           videoStarts(si) = vStart;
+                           frameStartB = 0;
+                           if ticksCorrect
+                                frameEndB = sum(vTicks>=max(dateN, vStart) & vTicks<=((size(s,2)/fs/60/60/24)+dateN));
+                           else
+                                frameEndB = size(s,2)/fs/60/60/24 - vStart + dateN;
+                           end
+                           videoTicks(si) = frameEndB;
+                           videoStarts(si) = vStart;
+                           fprintf('video clock initiation successful: start=%d end=%d\n', frameStartB, frameEndB)
+                           videoClock(si) = true;
+                        else
+                           videoClock(si) = false;
+                        end
                     end
 
-                    vStart
-                    if (vStart>dateN) & (vStart<((size(s,2)/fs/60/60/24)+dateN))
-                       videoStarts(si) = vStart;
-                       frameStartB = 0;
-                       frameEndB = sum(vTicks>=max(dateN, vStart) & vTicks<=((size(s,2)/fs/60/60/24)+dateN));
-                       videoTicks(si) = frameEndB;
-                       videoStarts(si) = vStart;
-                       fprintf('video clock initiation successful: start=%d end=%d\n', frameStartB, frameEndB)
-                       isVideo = true;
-                    end
-
-                    if ~isVideo
+                    if isVideo(si) && ~videoClock(si)
                        fprintf(2, 'file %s time does not match video clock by %d seconds\n', outFName, abs(videoStarts(si)+videoTicks(si)/fr/60/60/24 - dateN)*60*60*24);
                     end
                     
                     disp(outFName)
 
-                    save(outFName, 'chanNames', 'dateN', 'dateStr', 'fs', 'N', 'nCh', 's', 'subject', 'units', 'frameStart', 'frameEnd', 'frameStartB', 'frameEndB');
+                    save(outFName, 'chanNames', 'dateN', 'dateStr', 'fs', 'N', 'nCh', 's', 'subject', 'units', 'frameStart', 'frameEnd', 'frameStartB', 'frameEndB', 'ticksCorrect', 'isVideo', 'videoClock');
                     numFiles = numFiles + 1;
                     i = i+1;
                     
@@ -266,4 +289,7 @@ function numFiles = sortSmrX(inputFiles, outputDirectory, fs, segmentLength, del
     fclose(mismatchFileID);
     fclose(convertedListFileID);                
     fclose(notconvertedfd);
+    if logVStarts
+        fclose(vStartsFileID);
+    end
 end

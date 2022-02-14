@@ -1,10 +1,10 @@
-inputVideoFiles = '\\neurodata2\Large data\Video data\MonitoringVideokompHP\cam*\cam*__202108*';
+% inputVideoFiles = '\\neurodata2\Large data\Video data\MonitoringVideokompHP\cam*\cam*__202108*';
 inputEEGFiles = '\\neurodata2\Large data\JanaEEGexport_updated\FERDA-PC';
 % inputVideoFiles = '\\neurodata2\Large data\Video data\MonitoringVideokompHP\*\*_2022*.mp4';
-% inputEEGFiles = 'E:\outputEEG';
+inputEEGFiles = 'E:\outputEEG';
 % outputDirectory = 'E:\outputVideos';
 outputDirectory = '\\neurodata2\Large data\VideoMonitoring';
-targetSubject = 'Moni ET 430'
+targetSubject = 'Moni ET 430';
 numFiles = 0;
 PCName = 'FERDA-PC';
 fr = 20;
@@ -19,6 +19,8 @@ convertedFileList = strsplit(fileread([outputDirectory, '\convertedList_', num2s
 notconvertedfd = fopen([outputDirectory, '\notconvertedList_', num2str(fs), 'Hz.txt'], 'a');
 directory = dir(inputVideoFiles);
 eegDirectory = dir(inputEEGFiles);
+desyncTolerance = 1/24/6;
+
 
 for f = 1:length(directory)
     fname = sprintf('%s\\%s', directory(f).folder, directory(f).name);
@@ -77,29 +79,33 @@ for f = 1:length(directory)
         for e=1:length(eegDirectory)
             ind = length(subject);
             dnMatFile = datenum(eegDirectory(e).name(ind+2:ind+14), 'yymmdd_HHMMSS');
-            if dnMatFile>vDnStart && (dnMatFile + 1/24)<vDnEnd % TODO: add variable .smrx file length
+            if dnMatFile<vDnEnd+desyncTolerance && (dnMatFile + 1/24)>vDnStart-desyncTolerance % TODO: add variable .mat file length
                 eegData = load([eegDirectory(e).folder, '\', eegDirectory(e).name]);
                 timeStart = datetime(eegData.dateN, 'ConvertFrom', 'datenum') - vDateTimeStart;
                 videoDur = eegData.N/eegData.fs;
                 if exist(sprintf('%s\\%s\\%s-%s.mp4', outputDirectory, subject, subject, eegDirectory(e).name(ind+2:ind+14)), 'file')
                     fprintf('file %s\\%s\\%s-%s.avi exists - skipping conversion\n', outputDirectory, subject, subject, eegDirectory(e).name(ind+2:ind+14))
                     continue
-                end
-                isVideo = false;
-                if isfield(eegData, 'frameStart') & eegData.frameEnd~= 0                   
-                    ffmpegCommand = sprintf('-i "%s" -an -vf trim=start_frame=%d:end_frame=%d "%s\\%s\\%s-%s.mp4"', fname, eegData.frameStart, eegData.frameEnd, outputDirectory,subject, subject, eegDirectory(e).name(ind+2:ind+14))
-                    ffmpegexec(ffmpegCommand);
-                    isVideo = true;
-                end
-                if isfield(eegData, 'frameStartB') & eegData.frameEndB~=0
-                    ffmpegCommand = sprintf('-i "%s" -an -vf trim=start_frame=%d:end_frame=%d "%s\\%s\\%s-%sb.mp4"', fname, eegData.frameStartB, eegData.frameEndB, outputDirectory,subject, subject, eegDirectory(e).name(ind+2:ind+14))
-                    ffmpegexec(ffmpegCommand);
-                    isVideo = true;
-                end
-                if ~isVideo
-                    ffmpegCommand = sprintf('-ss %s -i "%s" -t %s -c copy "%s\\%s\\%s-%s.mp4"', timeStart, fname, duration(0,0,eegData.N/eegData.fs), outputDirectory, ...
-                    subject, subject, eegDirectory(e).name(ind+2:ind+14))
-                    ffmpegexec(ffmpegCommand);
+                end 
+                
+                if eegData.ticksCorrect
+                    if eegData.frameEnd~= 0 && eegData.frameEndB==0                   
+                        ffmpegCommand = sprintf('-i "%s" -an -vf trim=start_frame=%d:end_frame=%d "%s\\%s\\%s-%s.mp4"', fname, eegData.frameStart, eegData.frameEnd, outputDirectory,subject, subject, eegDirectory(e).name(ind+2:ind+14))
+                        ffmpegexec(ffmpegCommand);
+                    end
+%                     if eegData.frameEnd==0 && eegData.frameEndB~=0
+%                         ffmpegCommand = sprintf('-i "%s" -an -vf trim=start_frame=%d:end_frame=%d "%s\\%s\\%s-%sb.mp4"', fname, eegData.frameStartB, eegData.frameEndB, outputDirectory,subject, subject, eegDirectory(e).name(ind+2:ind+14))
+%                         ffmpegexec(ffmpegCommand);
+%                     end
+%                     if eegData.frameEnd~=0 && eegData.frameEndB~=0
+                        
+%                 end
+                else
+                    if eegData.frameEnd~= 0 && eegData.frameEndB==0
+                        ffmpegCommand = sprintf('-ss %s -i "%s" -t %s -c copy "%s\\%s\\%s-%s.mp4"', duration(eegData.frameStart*24,0, 0), fname, duration(eegData.frameEnd*24, 0, 0)-duration(eegData.frameStart*24,0, 0), outputDirectory, ...
+                        subject, subject, eegDirectory(e).name(ind+2:ind+14))
+                        ffmpegexec(ffmpegCommand);
+                    end
                 end
                 
                 numFiles = numFiles+1;

@@ -1,7 +1,7 @@
 % FOV warping script for lazy lamas like Jana
 %% specify reference and target files + load reference and mask
-subject = '433';
-FOVRef = 9;
+subject = '534';
+FOVRef = 1;
 sessionRef = 'F2';
 
 d = dir(sprintf('\\\\neurodata2\\Large data\\Monika 2p\\VIP_tdT\\*%s*\\*%s*%s\\file_%05d_aligned*.mat', subject, subject, sessionRef, FOVRef));
@@ -11,9 +11,10 @@ load(sprintf('%s\\krouzky_%05d', d.folder, FOVRef));
 colorRef = imread(sprintf('%s\\file_%05dc.tif', d.folder, FOVRef+3));
 
 %% load FOV in new session
-FOVNew = 6;
-sessionNew = 'F7';
-saveVarpTo = sprintf('%s\\%sFOV%05d', subject, sessionNew, FOVRef);
+FOVNew = 1;
+sessionNew = 'F4';
+% saveVarpTo = sprintf('%s\\%sFOV%05d', subject, sessionNew, FOVRef);
+saveVarpTo = 'VarpBlah';
 transformationType = 'rigid'; % automatic variants: 'rigid', 'similarity', 'affine'; default: 'polynomial' (manual point selection)
 
 d = dir(sprintf('\\\\neurodata2\\Large data\\Monika 2p\\VIP_tdT\\*%s*\\*%s*%s*\\file_%05d_aligned*.mat', subject, subject, sessionNew, FOVNew));
