@@ -14,5 +14,5 @@ load(sprintf('%s\\%s', d.folder, d.name));
 imageReference = uint16(mean(dataset.aligned, 3));
 % saveHSTo = sprintf('%s\\%sFOV%05dHS', d.folder, sessionRef, FOVRef);
 
-
-manualPick(imageReference, maskStructInt, [], saveHSTo, [], []);
+%%
+manualPick(imageReference, maskStructure, [], saveHSTo, [], []);

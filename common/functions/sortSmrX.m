@@ -33,6 +33,9 @@ targetSubject = 'Moni ET 430';
         if isempty(directory)
             error('Error: input files not found')
         end
+        directory = struct2table(directory);
+        directory = sortrows(directory, 'datenum');
+        directory = table2struct(directory);
     end
 
     if nargin<2 || isempty(outputDirectory)
@@ -66,8 +69,8 @@ targetSubject = 'Moni ET 430';
     notconvertedfd = fopen([outputDirectory, '\notconvertedList_', num2str(fs), 'Hz.txt'], 'a');
     videoTicks = zeros(4,1);
     videoStarts = zeros(4,1);
-    videoClock = false(4,1);
-    isVideo = false(4,1);
+    videoClocks = false(4,1);
+    isVideos = false(4,1);
 
     if logVStarts
         vStartsFileID = fopen(syncTimesLog, 'a');
@@ -134,8 +137,8 @@ targetSubject = 'Moni ET 430';
             thisStationID = stationIDs{stationIDs.date + stationIDs.time < d + 1/240, si};
             thisStationID = thisStationID(end); % station ID is the last ID preceding the file start time + 10mins
             if thisStationID ~= monitoringID
-                fprintf(2, 'Warning: monitoring ID does not match station ID. Data not converted!');
-                fprintf(2, 'monitoring ID = %d, stationID = %d', monitoringID, thisStationID);
+                fprintf(2, 'Warning: monitoring ID does not match station ID. Data not converted!\n');
+                fprintf(2, 'monitoring ID = %d, stationID = %d\n', monitoringID, thisStationID);
                 fprintf(mismatchFileID, 'Mismatch in subject: %s in file %s, at PC: %s, station: %s, datetime: %s, expected stationID: %d, wired monitoring ID: %d.\n', subject, fname, PCName, s, data.timeRecStartChar, thisStationID, monitoringID);
                 continue
             end
@@ -144,7 +147,7 @@ targetSubject = 'Moni ET 430';
             subject = replace(subject, '/', '-');
             subject = replace(subject, '*', 'nar.');
 
-            fprintf('%s\\%s\\%dHz', outputDirectory, subject, fs);
+            fprintf('%s\\%s\\%dHz\n', outputDirectory, subject, fs);
             mkdir(sprintf('%s\\%s\\%dHz', outputDirectory, subject, fs));          
             
             % get current station channels = *-S channels
@@ -191,25 +194,26 @@ targetSubject = 'Moni ET 430';
                 vTicks = find(diff(data.T.Signal{vChanInd})>2 & [0; diff(data.T.Signal{vChanInd},2)>0])./data.T.SamplingFreq(vChanInd);
                 vTicks = vTicks/60/60/24 + dateN;
                 vStart = vTicks(diff([dateN;vTicks])>(2/fr/60/60/24));
-                ticksCorrect = ~isempty(diff(vTicks)) && median(diff(vTicks) >= 1/2/fr/60/60/24);
-
+                isVideos(si) = ~isempty(diff(vTicks));
+                ticksCorrect = isVideos(si) && median(diff(vTicks) >= 1/2/fr/60/60/24);
+                
                 if ~isempty(vStart)
                     fprintf(vStartsFileID, '%s %s\\%s - %c\n', datetime(vStart(end), 'ConvertFrom', 'datenum'), directory(f).folder, directory(f).name, stations(si));
-%                     videoTicks(si) = 0;
+                    videoTicks(si) = 0;
                     if length(vStart) > 1
                         fprintf(2, 'Warning: more than 1 video start in file: %s\\%s \n', directory(f).folder, directory(f).name);
                         datetime(vStart, 'ConvertFrom', 'datenum')
                         vStart = vStart(end);
                     else
-                        fprintf('Video Clock beginning found in file: %s\\%s', directory(f).folder, directory(f).name);
+                        fprintf('Video Clock beginning found in file: %s\\%s\n', directory(f).folder, directory(f).name);
 %                         videoStarts(si) = vStart;
                         datetime(vStart, 'ConvertFrom', 'datenum');
                     end
-                    videoClock(si) = true;
+                    videoClocks(si) = true;
                 else 
                     if videoTicks(si)==0
                         fprintf(2, 'video clock beginning not found for this file: %s\\%s\n', directory(f).folder, directory(f).name);
-                        videoClock(si) = false;
+                        videoClocks(si) = false;
 %                         continue
                     end
                 end
@@ -229,25 +233,29 @@ targetSubject = 'Moni ET 430';
                     frameEnd = 0;
                     frameStartB = 0;
                     frameEndB = 0;
-                    isVideo(si) = sum(vTicks>=dateN & vTicks<=(size(s,2)/fs/60/60/24)+dateN)>0;
+                    isVideos(si) = sum(vTicks>=dateN & vTicks<=(size(s,2)/fs/60/60/24)+dateN)>0;
                     
-                    if isVideo(si) && videoClock(si) && abs(videoStarts(si)+videoTicks(si)/fr/60/60/24 - dateN) < 1/24/60
-                        frameStart = videoTicks(si);
-%                         length(vTicks)
-%                         sum(vTicks>=dateN)
-%                         sum(vTicks<=(size(s,2)/fs/60/60/24+dateN))
-%                         if vStart>dateN & vStart<((size(s,2)/fs/60/60/24)+dateN)
-                        if ticksCorrect
+                    if isVideos(si)
+                        if ticksCorrect && abs(videoStarts(si)+videoTicks(si)/fr/60/60/24 - dateN) < 1/24/60
+                            frameStart = videoTicks(si);
                             frameEnd = videoTicks(si) + sum(vTicks>=dateN & vTicks<=dateN+(size(s,2)/fs/60/60/24));
+
+                            videoTicks(si) = frameEnd;
+                            fprintf('frame numbers found successfully: start=%d end=%d ticks correct\n', frameStart, frameEnd)
+                            videoClocks(si) = true;
                         else
-                            frameEnd = videoTicks(si) + size(s,2)/fs/60/60/24 - max(vStart + dateN, 0);
+                            if ~ticksCorrect && abs(videoStarts(si)+videoTicks(si)-dateN) < 1/24/60
+                                frameStart = videoTicks(si);
+                                frameEnd = videoTicks(si) + size(s,2)/fs/60/60/24;% - max(vStart + dateN, 0);
+                                videoTicks(si) = frameEnd;
+                                fprintf('frame numbers found successfully: start=%d end=%d ticks incorrect\n', frameStart, frameEnd)
+                                videoClocks(si) = true;
+                            else
+                                videoClocks(si) = false;
+                            end
                         end
-                    
-                        videoTicks(si) = frameEnd;
-                        fprintf('frame numbers found successfully: start=%d end=%d\n', frameStart, frameEnd)
-                        videoClock(si) = true;
-                    else 
-                        if isVideo(si) && videoClock(si) && (vStart>dateN) && (vStart<((size(s,2)/fs/60/60/24)+dateN))
+
+                        if ~isempty(vStart) && (vStart>dateN) && (vStart<((size(s,2)/fs/60/60/24)+dateN))
                            videoStarts(si) = vStart;
                            frameStartB = 0;
                            if ticksCorrect
@@ -258,17 +266,23 @@ targetSubject = 'Moni ET 430';
                            videoTicks(si) = frameEndB;
                            videoStarts(si) = vStart;
                            fprintf('video clock initiation successful: start=%d end=%d\n', frameStartB, frameEndB)
-                           videoClock(si) = true;
-                        else
-                           videoClock(si) = false;
+                           videoClocks(si) = true;
                         end
+
                     end
 
-                    if isVideo(si) && ~videoClock(si)
-                       fprintf(2, 'file %s time does not match video clock by %d seconds\n', outFName, abs(videoStarts(si)+videoTicks(si)/fr/60/60/24 - dateN)*60*60*24);
+                    if isVideos(si) && ~videoClocks(si)
+                        if ticksCorrect
+                            fprintf(2, 'file %s time does not match video clock by %d seconds\n', outFName, abs(videoStarts(si)+videoTicks(si)/fr/60/60/24 - dateN)*60*60*24);
+                        else
+                            fprintf(2, 'file %s time does not match video clock by %d seconds\n', outFName, abs(videoStarts(si)+videoTicks(si) - dateN)*60*60*24);
+                        end
+                        videoTicks(si) = 0;
                     end
                     
                     disp(outFName)
+                    isVideo = isVideos(si);
+                    videoClock = videoClocks(si);
 
                     save(outFName, 'chanNames', 'dateN', 'dateStr', 'fs', 'N', 'nCh', 's', 'subject', 'units', 'frameStart', 'frameEnd', 'frameStartB', 'frameEndB', 'ticksCorrect', 'isVideo', 'videoClock');
                     numFiles = numFiles + 1;

@@ -111,6 +111,7 @@ if isempty(imageReferenceNEW)
             fig = gcf;
         end
         index = index+1;
+        save(sprintf('%s.mat', FOVandSessionName), 'maskStructure');
     end
     imwrite(checkOutImage, 'checkOutImage.tif', 'tiff');
     reidentificationRecord=zeros(1,size(maskStructure,2));
@@ -302,10 +303,17 @@ else
             hold(axRef, 'on')
         % 	title('Reference FOV', 'Parent', axRef)
             set (figHandle, 'Units', 'normalized', 'Position', [0,0,1,1]);
+            fname=FOVandSessionName;
+            fname(end-3:end)='.fig';
+            savefig(fname);
+            fname(end-3:end)='.png';
+            print(gcf,fname,'-dpng', '-r300');
         end
         Nindex = Nindex + 1;
     end
     imwrite(checkOutImage, 'checkOutImage.tif', 'tiff');
+    
+    save(sprintf('%s.mat', FOVandSessionName), 'maskStructure');
 end
 
 close;
